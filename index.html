@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bullseye Archery</title>
+<meta name="theme-color" content="#2b2a6b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bullseye">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e6e1f0;--ink:#241a3a;--card:#fff;--line:#b9aed4;--acc:#e8602c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16102a;--ink:#ece6ff;--card:#251c40;--line:#43366b}}
+:root[data-theme="dark"]{--bg:#16102a;--ink:#ece6ff;--card:#251c40;--line:#43366b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+button,input{touch-action:manipulation}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:'Fredoka',ui-rounded,system-ui,sans-serif;display:flex;justify-content:center;align-items:flex-start;user-select:none;-webkit-user-select:none;overflow-y:auto}
+#app{width:min(100%,560px);padding:8px}
+#hud{display:flex;justify-content:space-between;font-weight:700;font-size:18px;padding:2px 4px 6px}
+#wrap{position:relative}
+canvas{width:100%;aspect-ratio:3/2;display:block;border-radius:12px}
+#msg{position:absolute;top:10px;left:0;right:0;text-align:center;font-size:30px;font-weight:700;color:#fff;text-shadow:0 2px 6px #0007;pointer-events:none}
+#end{position:absolute;inset:0;background:rgba(20,10,40,.8);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;text-align:center}
+#end[hidden],#shop[hidden]{display:none}
+#end h2{font-size:38px;margin:0}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;font-weight:700}
+.big{background:var(--acc);color:#fff;padding:10px 22px;font-size:18px}
+#ctl{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin:12px 0 8px}
+#ctl label{display:flex;flex-direction:column;font-size:15px;font-weight:700}
+#ctl input{width:100%;height:34px;accent-color:var(--acc)}
+#row{display:flex;gap:10px}
+#mode{display:flex;gap:8px;margin:10px 0 0}
+#mode button{flex:1;padding:8px;background:var(--card);color:var(--ink);border:2px solid var(--line)}
+#mode button.on{border-color:var(--acc);background:var(--acc);color:#fff}
+#shopmsg{font-size:13px;margin:6px 0 0;min-height:1em}
+#info{text-align:center;font-size:14px;font-weight:700;padding:0 0 6px}
+#share{background:#6a2fd1}
+#pred{text-align:center;font-size:20px;font-weight:700;margin:2px 0 10px}
+#row button{flex:1}
+#row .alt{background:var(--card);color:var(--ink);border:2px solid var(--line);padding:10px}
+#shop{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+#shop h3{margin:8px 0 4px;font-size:16px}
+.sk{display:inline-block;margin:3px 4px 3px 0;padding:6px 10px;background:var(--bg);color:var(--ink);border:2px solid var(--line);font-size:14px}
+.sk.on{border-color:var(--acc)}
+.sk:disabled{opacity:.5;cursor:default}
+#note{font-size:12px;opacity:.75;margin:8px 0 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud"><span id="sc">Score 0</span><span id="ar">Arrows 10</span><span id="co">Coins 0</span></div>
+  <div id="info"></div>
+  <div id="wrap">
+    <canvas id="c"></canvas>
+    <div id="msg"></div>
+    <div id="end" hidden><h2 id="res"></h2><div id="sub"></div><button class="big" id="again">Play again</button><button class="big" id="share">Copy score to share</button></div>
+  </div>
+  <div id="mode"><button data-m="easy">Easy</button><button data-m="hard">Hard</button><button data-m="daily">Daily</button></div>
+  <div id="ctl">
+    <label>Aim <span id="av">30°</span><input id="ang" type="range" min="5" max="65" step="0.5" value="30"></label>
+    <label>Power <span id="pv">60%</span><input id="pow" type="range" min="20" max="100" step="0.5" value="60"></label>
+  </div>
+  <div id="pred"></div>
+  <div id="row"><button class="big" id="fire">Fire</button><button class="alt" id="shopbtn">Shop</button></div>
+  <div id="shop" hidden></div>
+  <p id="note">The numbers on the target are the points for each ring. Wind pushes the arrow. Streaks of bullseyes multiply points. Beat the goal to clear a level (every 5th is a boss). Easy mode shows what your shot would score; Hard and Daily give no hints. Daily uses the same setup for everyone each day. On a keyboard: ↑↓ aim, ←→ power, Space to fire.</p>
+</div>
+<script>
+const W=480,H=320,GY=285,X0=60,Y0=235,G=300,VK=400;
+const COLS=[{x:410,m:1,R:46}];
+const SK={
+ bow:[['classic','Oak',0,'#8b5a2b'],['neon','Neon',150,'#19e6c1'],['gold','Gold',300,'#f2c230']],
+ arrow:[['plain','Plain',0,''],['flame','Flame trail',120,'flame'],['rainbow','Rainbow trail',250,'rainbow']],
+ target:[['classic','Classic',0,['#f4f4f4','#222','#2f7de1','#e2503f','#f2c230']],
+         ['ocean','Ocean',150,['#e8f7ff','#7ec8e3','#2f7de1','#134b8a','#f2c230']],
+         ['night','Night',300,['#2b1b4a','#6a2fd1','#d12fa2','#ff6ec7','#fff176']]],
+ effect:[['spark','Sparks',0,['#ffe066','#ff9f1c']],['confetti','Confetti',150,['#ff5d8f','#5dd0ff','#ffe066','#9bff6b']],['stars','Stardust',250,['#fff','#c9a7ff','#7df9ff']]]
+};
+let S={coins:0,best:0,own:{bow:['classic'],arrow:['plain'],target:['classic']},eq:{bow:'classic',arrow:'plain',target:'classic'}};
+try{const s=JSON.parse(localStorage.getItem('archery3')||'null');if(s)S=s}catch(e){}
+S=Object.assign({mode:'easy',boost:false,level:1,bests:{}},S);
+S.own.effect=S.own.effect||['spark'];S.eq.effect=S.eq.effect||'spark';S.bests=Object.assign({easy:0,hard:0,daily:0},S.bests);
+const CHECKOUT_URL='';// paste a Stripe Payment Link (or similar) here once payments are set up
+const PRICE='$1.99';
+const save=()=>{try{localStorage.setItem('archery3',JSON.stringify(S))}catch(e){}};
+const $=id=>document.getElementById(id),cv=$('c'),g=cv.getContext('2d');
+const eq=t=>SK[t].find(s=>s[0]===S.eq[t]);
+let shots,score,arrow,stuck,cy,msgT=0,last=0,over,earned;
+
+function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;g.setTransform(cv.width/W,0,0,cv.height/H,0,0)}
+addEventListener('resize',fit);
+const mb=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+let R=Math.random,base=150,amp=0,spd=1,wind=0,clk=0,streak=0,P=[];
+const today=()=>new Date().toISOString().slice(0,10);
+const LV=()=>S.mode==='daily'?6:S.level;
+const boss=()=>S.mode!=='daily'&&S.level%5===0;
+const goal=()=>S.mode==='daily'?0:25+8*S.level;
+const ty=t=>base+amp*Math.sin(t*spd);
+const vis=()=>LV()<4||(clk%4)<3;
+const rnd=()=>{const L=LV(),b=boss();COLS[0].R=b?32:46;base=112+R()*83;amp=b?35:L>=3?Math.min(35,(L-2)*9):0;spd=b?1.8:.9+L*.08;wind=(R()*2-1)*Math.min(80,(L-1)*9+(b?20:0));return[ty(clk)]};
+function burst(x,y,big){const cs=eq('effect')[3];for(let i=0;i<(big?36:12);i++){const a=Math.random()*6.28,v=60+Math.random()*(big?220:120);P.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-40,t:.8,r:2+Math.random()*2,c:cs[i%cs.length]})}}
+function newGame(){R=S.mode==='daily'?mb([...today()].reduce((a,c)=>a*31+c.charCodeAt(0)|0,7)):Math.random;clk=0;streak=0;P=[];shots=10;score=0;earned=0;arrow=null;stuck=[];cy=rnd();over=false;$('end').hidden=true;hud()}
+function hud(){if(cy){$('pred').textContent=S.mode==='easy'?'At this aim: '+predict():S.mode==='daily'?'Daily challenge: no hints':'Hard mode: no hints';
+  $('info').textContent='Level '+(S.mode==='daily'?'Daily':S.level+(boss()?' BOSS':''))+' · Wind '+(Math.abs(wind)<4?'calm':(wind>0?'→ ':'← ')+Math.round(Math.abs(wind)/4))+(goal()?' · Goal '+goal():'')+(streak>1?' · Streak ×'+(1+.5*Math.min(streak-1,4)):'')}
+  document.querySelectorAll('#mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===S.mode));
+  $('sc').textContent='Score '+score;$('ar').textContent='Arrows '+shots;$('co').textContent='Coins '+S.coins+(S.boost?' (×1.5)':'');
+  $('av').textContent=$('ang').value+'°';$('pv').textContent=$('pow').value+'%'}
+$('ang').oninput=$('pow').oninput=hud;
+function say(t){$('msg').textContent=t;msgT=1.4}
+
+function fire(){
+  if(arrow||over)return;
+  const a=$('ang').value*Math.PI/180,v=$('pow').value/100*VK;
+  stuck=[];arrow={x:X0,y:Y0,vx:v*Math.cos(a),vy:-v*Math.sin(a),tr:[]};
+}
+$('fire').onclick=fire;
+addEventListener('keydown',e=>{
+  if(!$('shop').hidden)return;
+  if(e.code==='Space'){e.preventDefault();fire();return}
+  if(e.target.tagName==='INPUT')return;
+  const k={ArrowUp:['ang',1],ArrowDown:['ang',-1],ArrowRight:['pow',1],ArrowLeft:['pow',-1]}[e.key];
+  if(k){e.preventDefault();const el=$(k[0]);el.value=+el.value+k[1];hud()}
+});
+
+function done(){
+  arrow=null;shots--;cy=rnd();hud();
+  if(shots<=0){
+    over=true;const m=S.mode;if(m==='daily'&&S.dd!==today()){S.dd=today();S.bests.daily=0}
+    const nb=score>S.bests[m];if(nb)S.bests[m]=score;
+    const win=m!=='daily'&&score>=goal();let extra='';
+    if(win){if(S.level%5===0){S.coins+=100;earned+=100;extra=' · Boss bonus +100'}S.level++}
+    save();hud();
+    $('res').textContent=m==='daily'?'Daily: '+score:win?'Level cleared!':nb?'New best: '+score:'Score '+score+' (goal '+goal()+')';
+    $('sub').textContent='Best ('+m+') '+S.bests[m]+' · Coins earned '+earned+extra;
+    $('again').textContent=win?'Next level':'Play again';$('end').hidden=false;
+  }
+}
+const FH=1/120;let acc=0;
+function step(dt){
+  if(!arrow)return;
+  arrow.tr.push({x:arrow.x,y:arrow.y});if(arrow.tr.length>16)arrow.tr.shift();
+  acc+=dt;while(acc>=FH&&arrow){sub(FH);acc-=FH}
+}
+function predict(){
+  const a=$('ang').value*Math.PI/180,v=$('pow').value/100*VK,c=COLS[0];
+  let x=X0,y=Y0,vx=v*Math.cos(a),vy=-v*Math.sin(a);
+  for(let i=0;i<1200;i++){
+    const px=x,py=y;vx+=wind*FH;vy+=G*FH;x+=vx*FH;y+=vy*FH;
+    if(px<c.x&&x>=c.x){
+      const r=Math.abs(py+(y-py)*(c.x-px)/(x-px)-ty(clk+(i+1)*FH))/c.R;
+      return r>1?'Miss':(r<.2?10:r<.4?8:r<.6?6:r<.8?4:2)+' points';
+    }
+    if(y>=GY)break;
+  }
+  return 'Miss';
+}
+function sub(dt){
+  const a=arrow;
+  a.vx+=wind*dt;a.vy+=G*dt;clk+=dt;cy[0]=ty(clk);const px=a.x,py=a.y;a.x+=a.vx*dt;a.y+=a.vy*dt;
+  for(let i=0;i<COLS.length;i++){
+    const c=COLS[i];
+    if(px<c.x&&a.x>=c.x){
+      const yy=py+(a.y-py)*(c.x-px)/(a.x-px),d=Math.abs(yy-cy[i]);
+      if(d<=c.R){
+        const r=d/c.R,p=r<.2?10:r<.4?8:r<.6?6:r<.8?4:2;streak=r<.2?streak+1:0;const mu=r<.2?1+.5*Math.min(streak-1,4):1,pts=Math.round(p*mu);burst(c.x,yy,r<.2);
+        const gain=Math.round(pts*(S.boost?1.5:1));score+=pts;S.coins+=gain;earned+=gain;save();
+        stuck.push({x:c.x,y:yy,a:Math.atan2(a.vy,a.vx)});
+        say(r<.2?'Bullseye'+(mu>1?' ×'+mu:'')+'! +'+pts:'+'+pts);done();return;
+      }
+    }
+  }
+  if(a.y>=GY||a.x>W+20){say('Miss');streak=0;done()}
+}
+
+function drawArrow(x,y,ang,len){
+  g.save();g.translate(x,y);g.rotate(ang);g.strokeStyle='#3a2a1a';g.lineWidth=2.5;
+  g.beginPath();g.moveTo(-len,0);g.lineTo(0,0);g.stroke();
+  g.fillStyle='#ddd';g.beginPath();g.moveTo(0,0);g.lineTo(-6,-3.5);g.lineTo(-6,3.5);g.fill();
+  g.strokeStyle='#e2503f';g.lineWidth=3;g.beginPath();g.moveTo(-len,0);g.lineTo(-len+7,0);g.stroke();
+  g.restore();
+}
+function draw(){
+  const sky=g.createLinearGradient(0,0,0,GY);sky.addColorStop(0,'#2b2a6b');sky.addColorStop(.6,'#c4568a');sky.addColorStop(1,'#ffb877');
+  g.fillStyle=sky;g.fillRect(0,0,W,H);
+  g.fillStyle='#4d3a7a';g.beginPath();g.moveTo(0,GY-30);g.quadraticCurveTo(140,GY-110,300,GY-40);g.quadraticCurveTo(400,GY-90,W,GY-35);g.lineTo(W,GY);g.lineTo(0,GY);g.fill();
+  g.fillStyle='#3f6b3a';g.fillRect(0,GY,W,H-GY);
+  const th=eq('target')[3];
+  COLS.forEach((c,i)=>{
+    g.globalAlpha=vis()?1:.15;g.strokeStyle='#5a4130';g.lineWidth=5;g.beginPath();g.moveTo(c.x,cy[i]+c.R);g.lineTo(c.x,GY);g.stroke();
+    for(let k=0;k<5;k++){g.fillStyle=th[k];g.beginPath();g.arc(c.x,cy[i],c.R*(5-k)/5,0,7);g.fill()}
+    g.font='700 12px Fredoka,system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';
+    [2,4,6,8,10].forEach((p,k)=>{
+      const yy=k<4?cy[i]-c.R*(4.5-k)/5:cy[i];
+      g.fillStyle=k===0||k===4?'#222':'#fff';g.fillText(p,c.x,yy);
+    });
+    g.textBaseline='alphabetic';g.globalAlpha=1;
+  });
+  // archer + bow
+  const ang=$('ang').value*Math.PI/180,bc=eq('bow')[3];
+  g.fillStyle='#1c1630';g.fillRect(X0-24,Y0-6,10,GY-Y0+6);g.beginPath();g.arc(X0-19,Y0-16,8,0,7);g.fill();
+  g.save();g.translate(X0,Y0);g.rotate(-ang);
+  g.strokeStyle=bc;g.lineWidth=4;g.beginPath();g.arc(-10,0,30,-1.1,1.1);g.stroke();
+  g.strokeStyle='#fff9';g.lineWidth=1;g.beginPath();g.moveTo(-10+30*Math.cos(-1.1),30*Math.sin(-1.1));g.lineTo(-14,0);g.lineTo(-10+30*Math.cos(1.1),30*Math.sin(1.1));g.stroke();
+  g.restore();
+  if(!arrow&&!over){
+    drawArrow(X0+18*Math.cos(-ang)*0+0,Y0,0,0);
+    g.save();g.translate(X0,Y0);g.rotate(-ang);drawArrow(18,0,0,36);g.restore();
+    if(S.mode==='easy'){const v=$('pow').value/100*VK;let x=X0,y=Y0,vx=v*Math.cos(ang),vy=-v*Math.sin(ang);
+    g.fillStyle='#fff8';for(let i=0;i<9;i++){for(let j=0;j<3;j++){vx+=wind*.02/3;vy+=G*.02/3;x+=vx*.02/3;y+=vy*.02/3}g.beginPath();g.arc(x,y,2,0,7);g.fill()}}
+  }
+  stuck.forEach(s=>drawArrow(s.x+6*Math.cos(s.a),s.y+6*Math.sin(s.a),s.a,30));
+  if(arrow){
+    const t=eq('arrow')[3];
+    arrow.tr.forEach((p,i)=>{
+      if(!t)return;g.globalAlpha=i/arrow.tr.length*.8;
+      g.fillStyle=t==='flame'?(i%2?'#ffb02e':'#ff4d1a'):'hsl('+((i*24+performance.now()/4)%360)+',90%,60%)';
+      g.beginPath();g.arc(p.x,p.y,2+i/5,0,7);g.fill();
+    });g.globalAlpha=1;
+    drawArrow(arrow.x,arrow.y,Math.atan2(arrow.vy,arrow.vx),30);
+  }
+  P.forEach(p=>{g.globalAlpha=Math.max(0,p.t/.8);g.fillStyle=p.c;g.beginPath();g.arc(p.x,p.y,p.r,0,7);g.fill()});g.globalAlpha=1;
+}
+function loop(ts){
+  const dt=Math.min(.033,(ts-last)/1000||0);last=ts;
+  step(dt);if(!arrow){clk+=dt;cy[0]=ty(clk);if(S.mode==='easy'&&!over)$('pred').textContent='At this aim: '+predict()}
+  P.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=200*dt;p.t-=dt});P=P.filter(p=>p.t>0);
+  if(msgT>0){msgT-=dt;if(msgT<=0)$('msg').textContent=''}
+  draw();requestAnimationFrame(loop);
+}
+
+function shop(){
+  const el=$('shop');el.innerHTML='';
+  const names={bow:'Bow',arrow:'Arrow',target:'Target',effect:'Hit effect'};
+  for(const t of ['bow','arrow','target','effect']){
+    const h=document.createElement('h3');h.textContent=names[t];el.append(h);
+    SK[t].forEach(s=>{
+      const own=S.own[t].includes(s[0]),on=S.eq[t]===s[0],b=document.createElement('button');
+      b.className='sk'+(on?' on':'');
+      b.textContent=s[1]+' – '+(on?'Equipped':own?'Equip':s[2]+' coins');
+      b.disabled=!own&&S.coins<s[2];
+      b.onclick=()=>{
+        if(!own){S.coins-=s[2];S.own[t].push(s[0])}
+        S.eq[t]=s[0];save();hud();shop();
+      };
+      el.append(b);
+    });
+  }
+  const h=document.createElement('h3');h.textContent='Booster';el.append(h);
+  const bb=document.createElement('button');bb.className='sk'+(S.boost?' on':'');
+  bb.textContent='1.5× coins – '+(S.boost?'Active':PRICE+' (real money)');bb.onclick=buyBooster;el.append(bb);
+  const tb=document.createElement('button');tb.className='sk';tb.textContent='Test mode: turn booster '+(S.boost?'off':'on');
+  tb.onclick=()=>{S.boost=!S.boost;save();hud();shop()};el.append(tb);
+  const m=document.createElement('p');m.id='shopmsg';el.append(m);
+}
+document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{if(S.mode!==b.dataset.m){S.mode=b.dataset.m;save();newGame()}});
+function buyBooster(){
+  if(S.boost)return;
+  if(CHECKOUT_URL){window.open(CHECKOUT_URL,'_blank');return}
+  $('shopmsg').textContent='Real payments are not connected yet. Use the test button to try the booster.';
+}
+$('shopbtn').onclick=()=>{const s=$('shop');s.hidden=!s.hidden;if(!s.hidden)shop()};
+$('again').onclick=newGame;
+$('share').onclick=()=>{const t='Bullseye Archery '+(S.mode==='daily'?'daily '+today():'level '+S.level)+': I scored '+score+'!';try{navigator.clipboard.writeText(t).then(()=>{$('sub').textContent+=' · Copied!'},()=>{$('sub').textContent+=' · Copy not allowed here'})}catch(e){}};
+fit();newGame();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
